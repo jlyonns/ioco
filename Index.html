@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geolocation & Device Orientation</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for Inter font and general layout */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+        }
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background-color: #ffffff;
+            border-radius: 1.5rem; /* More rounded corners */
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            padding: 2rem;
+            text-align: center;
+        }
+        .data-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #e2e8f0; /* Light gray border */
+        }
+        .data-item:last-child {
+            border-bottom: none;
+        }
+        .data-label {
+            font-weight: 600;
+            color: #4a5568; /* Darker gray for labels */
+        }
+        .data-value {
+            color: #2d3748; /* Even darker gray for values */
+            font-family: 'SF Mono', 'Roboto Mono', monospace; /* Monospace for values */
+        }
+        .button-group button {
+            transition: all 0.2s ease-in-out;
+        }
+        .button-group button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .button-group button:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-extrabold mb-6 text-gray-800">Geolocation & Device Orientation</h1>
+
+        <div id="status" class="mb-6 p-3 rounded-lg text-sm font-medium text-center bg-blue-100 text-blue-800 hidden">
+            <!-- Status messages will appear here -->
+        </div>
+
+        <div class="space-y-4 mb-8">
+            <div class="data-item">
+                <span class="data-label">Latitude:</span>
+                <span id="latitude" class="data-value">N/A</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">Longitude:</span>
+                <span id="longitude" class="data-value">N/A</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">Accuracy (m):</span>
+                <span id="accuracy" class="data-value">N/A</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">Heading (α):</span>
+                <span id="alpha" class="data-value">N/A</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">Pitch (β):</span>
+                <span id="beta" class="data-value">N/A</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">Roll (γ):</span>
+                <span id="gamma" class="data-value">N/A</span>
+            </div>
+        </div>
+
+        <div class="button-group flex justify-center space-x-4">
+            <button id="startButton" class="px-6 py-3 bg-green-600 text-white font-bold rounded-full shadow-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75">
+                Start Tracking
+            </button>
+            <button id="stopButton" class="px-6 py-3 bg-red-600 text-white font-bold rounded-full shadow-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75" disabled>
+                Stop Tracking
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Get references to DOM elements
+        const statusDiv = document.getElementById('status');
+        const latitudeSpan = document.getElementById('latitude');
+        const longitudeSpan = document.getElementById('longitude');
+        const accuracySpan = document.getElementById('accuracy');
+        const alphaSpan = document.getElementById('alpha');
+        const betaSpan = document.getElementById('beta');
+        const gammaSpan = document.getElementById('gamma');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+
+        let watchId = null; // To store the ID returned by watchPosition
+        let isTracking = false;
+
+        /**
+         * Displays a status message to the user.
+         * @param {string} message - The message to display.
+         * @param {string} type - The type of message ('info', 'error').
+         */
+        function showStatus(message, type = 'info') {
+            statusDiv.textContent = message;
+            statusDiv.classList.remove('hidden', 'bg-blue-100', 'text-blue-800', 'bg-red-100', 'text-red-800');
+            if (type === 'error') {
+                statusDiv.classList.add('bg-red-100', 'text-red-800');
+            } else {
+                statusDiv.classList.add('bg-blue-100', 'text-blue-800');
+            }
+            statusDiv.classList.remove('hidden');
+        }
+
+        /**
+         * Clears the status message.
+         */
+        function clearStatus() {
+            statusDiv.classList.add('hidden');
+            statusDiv.textContent = '';
+        }
+
+        /**
+         * Updates the UI with new geolocation data.
+         * @param {GeolocationPosition} position - The geolocation position object.
+         */
+        function updateGeolocationUI(position) {
+            latitudeSpan.textContent = position.coords.latitude.toFixed(6);
+            longitudeSpan.textContent = position.coords.longitude.toFixed(6);
+            accuracySpan.textContent = position.coords.accuracy.toFixed(2);
+            clearStatus();
+        }
+
+        /**
+         * Updates the UI with new device orientation data.
+         * @param {DeviceOrientationEvent} event - The device orientation event object.
+         */
+        function updateDeviceOrientationUI(event) {
+            // Alpha: rotation around the Z axis (compass heading)
+            // Beta: rotation around the X axis (front-to-back tilt, pitch)
+            // Gamma: rotation around the Y axis (left-to-right tilt, roll)
+            alphaSpan.textContent = event.alpha ? event.alpha.toFixed(2) + '°' : 'N/A';
+            betaSpan.textContent = event.beta ? event.beta.toFixed(2) + '°' : 'N/A';
+            gammaSpan.textContent = event.gamma ? event.gamma.toFixed(2) + '°' : 'N/A';
+        }
+
+        /**
+         * Handles geolocation errors.
+         * @param {GeolocationPositionError} error - The geolocation error object.
+         */
+        function geolocationError(error) {
+            let message = 'An unknown error occurred.';
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    message = 'Geolocation permission denied. Please enable location services for this browser.';
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    message = 'Location information is unavailable.';
+                    break;
+                case error.TIMEOUT:
+                    message = 'The request to get user location timed out.';
+                    break;
+            }
+            showStatus(`Geolocation Error: ${message}`, 'error');
+            stopTracking(); // Stop tracking on error
+        }
+
+        /**
+         * Requests device orientation permission for iOS 13+ and starts listening.
+         */
+        async function requestDeviceOrientationPermissionAndStart() {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permissionState = await DeviceOrientationEvent.requestPermission();
+                    if (permissionState === 'granted') {
+                        window.addEventListener('deviceorientation', updateDeviceOrientationUI);
+                        showStatus('Device orientation access granted.');
+                    } else {
+                        showStatus('Device orientation permission denied.', 'error');
+                    }
+                } catch (error) {
+                    showStatus(`Error requesting device orientation permission: ${error.message}`, 'error');
+                }
+            } else {
+                // For browsers that don't require explicit permission (Android, older iOS)
+                window.addEventListener('deviceorientation', updateDeviceOrientationUI);
+                showStatus('Device orientation listener started.');
+            }
+        }
+
+        /**
+         * Starts tracking geolocation and device orientation.
+         */
+        function startTracking() {
+            if (isTracking) return; // Prevent multiple starts
+
+            showStatus('Starting tracking...');
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            isTracking = true;
+
+            // Start geolocation tracking
+            if (navigator.geolocation) {
+                watchId = navigator.geolocation.watchPosition(
+                    updateGeolocationUI,
+                    geolocationError,
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 5000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                showStatus('Geolocation is not supported by your browser.', 'error');
+                stopTracking();
+                return;
+            }
+
+            // Request and start device orientation tracking
+            requestDeviceOrientationPermissionAndStart();
+        }
+
+        /**
+         * Stops tracking geolocation and device orientation.
+         */
+        function stopTracking() {
+            if (!isTracking) return; // Prevent multiple stops
+
+            showStatus('Stopping tracking...');
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            isTracking = false;
+
+            // Stop geolocation tracking
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+
+            // Stop device orientation tracking
+            window.removeEventListener('deviceorientation', updateDeviceOrientationUI);
+
+            // Reset UI
+            latitudeSpan.textContent = 'N/A';
+            longitudeSpan.textContent = 'N/A';
+            accuracySpan.textContent = 'N/A';
+            alphaSpan.textContent = 'N/A';
+            betaSpan.textContent = 'N/A';
+            gammaSpan.textContent = 'N/A';
+
+            clearStatus();
+            showStatus('Tracking stopped.');
+        }
+
+        // Event Listeners for buttons
+        startButton.addEventListener('click', startTracking);
+        stopButton.addEventListener('click', stopTracking);
+
+        // Initial status message
+        window.onload = () => {
+            showStatus('Click "Start Tracking" to begin.');
+        };
+    </script>
+</body>
+</html>
